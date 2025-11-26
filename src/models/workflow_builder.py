@@ -204,7 +204,10 @@ class HunyuanVideoWorkflowBuilder:
                 "inputs": {
                     "samples": [sampler_id, 0],
                     "vae": [vae_loader_id, 0],
-                    "tile_size": 512
+                    "tile_size": 512,
+                    "overlap": 64,  # Spatial overlap for tiling
+                    "temporal_size": 16,  # Number of frames processed per batch
+                    "temporal_overlap": 4  # Temporal overlap between batches
                 }
             }
         else:

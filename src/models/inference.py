@@ -9,7 +9,7 @@ import numpy as np
 import json
 import random
 
-from config.app_settings import AppSettings, ServerMode
+from config.app_settings import AppSettings, ServerMode, PerformancePreset
 from .comfyui_client import ComfyUIClient
 
 logger = logging.getLogger(__name__)
@@ -48,12 +48,39 @@ class HunyuanVideoInference:
         '3D': '3d render, octane render, high quality',
         'Artistic': 'artistic, stylized, creative'
     }
-    
+        
     def __init__(self, model_manager, app_settings: Optional[AppSettings] = None, comfyui_client: Optional[ComfyUIClient] = None, comfyui_server=None):
         """
         Initialize inference wrapper
         
         Args:
+            model_manager: ModelManager instance
+            app_settings: AppSettings instance
+            comfyui_client: ComfyUIClient instance
+            comfyui_server: ComfyUIServer instance (optional)
+        """
+        self.model_manager = model_manager
+        self.settings = app_settings
+        self.comfyui_client = comfyui_client
+        self.comfyui_server = comfyui_server
+        self.pipeline = None
+        
+        if not self.settings:
+            logger.warning("AppSettings not provided to inference engine, using defaults")
+            self.settings = AppSettings()
+            
+        if not self.comfyui_client:
+            # Create default client if not provided
+            server_url = self.settings.server_url if self.settings else "http://127.0.0.1:8188"
+            self.comfyui_client = ComfyUIClient(server_url)
+    
+    def _ensure_pipeline_loaded(self, **kwargs):
+        """Ensure pipeline is loaded"""
+        if not self.model_manager.is_loaded():
+            logger.info("Pipeline not loaded, loading now...")
+            self.pipeline = self.model_manager.load_pipeline(**kwargs)
+        else:
+            self.pipeline = self.model_manager.pipeline
         
         return self.pipeline is not None
     
@@ -172,7 +199,7 @@ class HunyuanVideoInference:
         logger.info(f"Prompt: {prompt}")
         
         # Check if we should use ComfyUI
-        if self.app_settings and self.app_settings.server_mode != ServerMode.UNDEFINED and self.comfyui_client:
+        if self.settings and self.settings.server_mode != ServerMode.UNDEFINED and self.comfyui_client:
             return self._generate_with_comfyui(
                 prompt=prompt,
                 negative_prompt=negative_prompt,
@@ -317,10 +344,16 @@ class HunyuanVideoInference:
             low_vram = True
         elif self.settings.performance_preset == PerformancePreset.AUTO:
             # Check VRAM if auto
-            vram_gb = self.settings.get_vram_gb()
-            if vram_gb < 16:
+            import torch
+            if torch.cuda.is_available():
+                vram_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+                if vram_gb < 16:
+                    low_vram = True
+                    logger.info(f"Auto-detected Low VRAM mode ({vram_gb:.1f} GB VRAM)")
+            else:
+                # No CUDA available, use low VRAM mode as safe default
                 low_vram = True
-                logger.info(f"Auto-detected Low VRAM mode ({vram_gb:.1f} GB VRAM)")
+                logger.info("No CUDA detected, enabling Low VRAM mode")
 
         if kwargs.get('image'):
             # Image-to-Video
