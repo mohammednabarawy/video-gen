@@ -35,7 +35,8 @@ class HunyuanVideoWorkflowBuilder:
         steps: int = 50,
         cfg: float = 7.0,
         seed: Optional[int] = None,
-        fps: int = 24
+        fps: int = 24,
+        enable_vae_tiling: bool = False
     ) -> Dict[str, Any]:
         """
         Build a Text-to-Video workflow for HunyuanVideo
@@ -192,13 +193,23 @@ class HunyuanVideoWorkflowBuilder:
         
         # Node 13: VAEDecode
         vae_decode_id = self._next_id()
-        self.workflow[vae_decode_id] = {
-            "class_type": "VAEDecode",
-            "inputs": {
-                "samples": [sampler_id, 0],
-                "vae": [vae_loader_id, 0]
+        if enable_vae_tiling:
+            self.workflow[vae_decode_id] = {
+                "class_type": "VAEDecodeTiled",
+                "inputs": {
+                    "samples": [sampler_id, 0],
+                    "vae": [vae_loader_id, 0],
+                    "tile_size": 512
+                }
             }
-        }
+        else:
+            self.workflow[vae_decode_id] = {
+                "class_type": "VAEDecode",
+                "inputs": {
+                    "samples": [sampler_id, 0],
+                    "vae": [vae_loader_id, 0]
+                }
+            }
         
         # Node 14: CreateVideo
         create_video_id = self._next_id()
@@ -237,7 +248,8 @@ class HunyuanVideoWorkflowBuilder:
         steps: int = 50,
         cfg: float = 7.0,
         seed: Optional[int] = None,
-        fps: int = 24
+        fps: int = 24,
+        enable_vae_tiling: bool = False
     ) -> Dict[str, Any]:
         """
         Build an Image-to-Video workflow for HunyuanVideo
@@ -268,7 +280,8 @@ class HunyuanVideoWorkflowBuilder:
             steps=steps,
             cfg=cfg,
             seed=seed,
-            fps=fps
+            fps=fps,
+            enable_vae_tiling=enable_vae_tiling
         )
         
         # Update model to I2V version

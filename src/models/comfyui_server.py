@@ -75,13 +75,14 @@ class ComfyUIServer:
         except:
             return False
     
-    def start(self, timeout: int = 30, log_callback: Optional[Callable[[str], None]] = None) -> tuple[bool, str]:
+    def start(self, timeout: int = 30, log_callback: Optional[Callable[[str], None]] = None, args: list[str] = None) -> tuple[bool, str]:
         """
         Start ComfyUI server
         
         Args:
             timeout: Maximum time to wait for server to start (seconds)
             log_callback: Optional callback function to receive log lines
+            args: Optional list of command line arguments to pass to ComfyUI
             
         Returns:
             Tuple of (success, message)
@@ -118,8 +119,12 @@ class ComfyUIServer:
                     python_exe = str(venv_python)
 
             
+            cmd = [python_exe, "main.py", "--port", str(self.port)]
+            if args:
+                cmd.extend(args)
+                
             self.process = subprocess.Popen(
-                [python_exe, "main.py", "--port", str(self.port)],
+                cmd,
                 cwd=str(self.comfyui_path),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,  # Merge stderr into stdout
@@ -200,8 +205,43 @@ class ComfyUIServer:
         except Exception as e:
             logger.error(f"Error stopping server: {e}")
             return False, f"Error stopping server: {str(e)}"
-    
-    def get_status(self) -> dict:
+    def restart(self, timeout: int = 30, args: list[str] = None) -> tuple[bool, str]:
+        """
+        Restart ComfyUI server
+        
+        Args:
+            timeout: Timeout for start operation
+            args: Optional list of command line arguments
+            
+        Returns:
+            Tuple of (success, message)
+        """
+        logger.info("Restarting ComfyUI server...")
+        
+        # Stop existing server
+        self.stop()
+        
+        # Wait a bit
+        time.sleep(2)
+        
+        # Start new instance
+        return self.start(timeout=timeout, args=args)
+        
+    def check_health(self) -> bool:
+        """
+        Check if server is healthy and responsive
+        
+        Returns:
+            True if healthy
+        """
+        try:
+            if not self.process or self.process.poll() is not None:
+                return False
+                
+            response = requests.get(f"{self.server_url}/system_stats", timeout=1)
+            return response.status_code == 200
+        except:
+            return False
         """
         Get current server status
         

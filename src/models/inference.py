@@ -49,7 +49,7 @@ class HunyuanVideoInference:
         'Artistic': 'artistic, stylized, creative'
     }
     
-    def __init__(self, model_manager, app_settings: Optional[AppSettings] = None, comfyui_client: Optional[ComfyUIClient] = None):
+    def __init__(self, model_manager, app_settings: Optional[AppSettings] = None, comfyui_client: Optional[ComfyUIClient] = None, comfyui_server=None):
         """
         Initialize inference wrapper
         
@@ -57,10 +57,12 @@ class HunyuanVideoInference:
             model_manager: ModelManager instance
             app_settings: AppSettings instance
             comfyui_client: ComfyUIClient instance
+            comfyui_server: ComfyUIServer instance (optional)
         """
         self.model_manager = model_manager
         self.app_settings = app_settings
         self.comfyui_client = comfyui_client
+        self.comfyui_server = comfyui_server
         self.pipeline = None
     
     def _ensure_pipeline_loaded(self, **kwargs):
@@ -269,155 +271,248 @@ class HunyuanVideoInference:
             
             logger.info(f"✓ Video generated! Shape: {video_frames.shape}")
             return video_frames
-            
         except Exception as e:
             logger.error(f"Error during video generation: {e}", exc_info=True)
             return None
     
-    def _generate_with_comfyui(self, **kwargs) -> Optional[np.ndarray]:
-        """Generate video using ComfyUI backend"""
-        logger.info("Generating with ComfyUI...")
+    def _validate_parameters(self, **kwargs) -> tuple[bool, str]:
+        """
+        Validate generation parameters to prevent server crashes
         
-        if not self.comfyui_client.is_server_running():
-            logger.error("ComfyUI server is not running")
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        # Validate resolution
+        width = kwargs.get('width')
+        height = kwargs.get('height')
+        if width and (width % 8 != 0 or height % 8 != 0):
+            return False, f"Resolution must be divisible by 8 (got {width}x{height})"
+            
+        # Validate steps
+        steps = kwargs.get('num_inference_steps', 50)
+        if steps < 1 or steps > 200:
+            return False, f"Steps must be between 1 and 200 (got {steps})"
+            
+        # Validate frames
+        frames = kwargs.get('num_frames', 129)
+        if frames < 1:
+            return False, f"Frame count must be positive (got {frames})"
+            
+        return True, ""
+
+    def _generate_with_comfyui(self, **kwargs) -> Optional[np.ndarray]:
+        """Generate video using ComfyUI backend with auto-restart"""
+        
+        # 1. Validate parameters
+        width, height = self._calculate_dimensions(
+            kwargs.get('resolution', '720p'), 
+            kwargs.get('aspect_ratio', '16:9')
+        )
+        kwargs['width'] = width
+        kwargs['height'] = height
+        
+        is_valid, error_msg = self._validate_parameters(**kwargs)
+        if not is_valid:
+            logger.error(f"Invalid parameters: {error_msg}")
             return None
             
-        # Connect to WebSocket for real-time updates
-        try:
-            self.comfyui_client.connect()
-            
-            # Register callbacks
-            progress_callback = kwargs.get('progress_callback')
-            preview_callback = kwargs.get('preview_callback')
-            
-            if progress_callback:
-                def on_progress(data):
-                    # data = {'value': 1, 'max': 20}
-                    value = data.get('value', 0)
-                    max_val = data.get('max', 1)
-                    progress_callback(value, max_val, 0.0)
-                self.comfyui_client.register_callback('progress', on_progress)
-                
-            if preview_callback:
-                self.comfyui_client.register_callback('preview', preview_callback)
-                
-        except Exception as e:
-            logger.warning(f"Failed to connect to WebSocket: {e}")
-
-        try:
-            from .workflow_builder import HunyuanVideoWorkflowBuilder
-            
-            # Extract parameters
-            prompt = kwargs.get('prompt', '')
-            negative_prompt = kwargs.get('negative_prompt', '')
-            image = kwargs.get('image')
-            resolution = kwargs.get('resolution', '720p')
-            num_frames = kwargs.get('num_frames', 129)
-            num_inference_steps = kwargs.get('num_inference_steps', 50)
-            guidance_scale = kwargs.get('guidance_scale', 7.0)
-            seed = kwargs.get('seed')
-            
-            # Calculate dimensions
-            width, height = self._calculate_dimensions(
-                resolution=resolution,
-                aspect_ratio=kwargs.get('aspect_ratio', '16:9')
+        # 2. Build workflow
+        from .workflow_builder import HunyuanVideoWorkflowBuilder
+        builder = HunyuanVideoWorkflowBuilder()
+        
+        # Enhance prompt with style and camera motion
+        prompt = kwargs.get('prompt', '')
+        style = kwargs.get('style')
+        camera_motion = kwargs.get('camera_motion')
+        
+        if style or camera_motion:
+            prompt = self._enhance_prompt(prompt, style, camera_motion)
+            logger.info(f"Enhanced prompt for ComfyUI: {prompt}")
+        
+        if kwargs.get('image'):
+            # Image-to-Video
+            workflow = builder.build_i2v_workflow(
+                prompt=prompt,
+                image_path=kwargs.get('image_path'), # Pass path, not PIL image
+                width=width,
+                height=height,
+                num_frames=kwargs.get('num_frames'),
+                steps=kwargs.get('num_inference_steps'),
+                cfg=kwargs.get('guidance_scale'),
+                seed=kwargs.get('seed'),
+                fps=kwargs.get('fps', 24)
+            )
+        else:
+            # Text-to-Video
+            workflow = builder.build_t2v_workflow(
+                prompt=prompt,
+                width=width,
+                height=height,
+                num_frames=kwargs.get('num_frames'),
+                steps=kwargs.get('num_inference_steps'),
+                cfg=kwargs.get('guidance_scale'),
+                seed=kwargs.get('seed'),
+                fps=kwargs.get('fps', 24)
             )
             
-            logger.info(f"Building workflow for {width}x{height}, {num_frames} frames")
-            
-            # Build workflow
-            builder = HunyuanVideoWorkflowBuilder()
-            
-            if image is not None:
-                # Image-to-Video
-                logger.info("Building I2V workflow")
-                # For now, we'll use T2V as I2V requires uploading the image first
-                logger.warning("I2V not fully implemented in ComfyUI backend yet, using T2V")
-                workflow = builder.build_t2v_workflow(
-                    prompt=prompt,
-                    negative_prompt=negative_prompt,
-                    width=width,
-                    height=height,
-                    num_frames=num_frames,
-                    steps=num_inference_steps,
-                    cfg=guidance_scale,
-                    seed=seed
-                )
-            else:
-                # Text-to-Video
-                logger.info("Building T2V workflow")
-                workflow = builder.build_t2v_workflow(
-                    prompt=prompt,
-                    negative_prompt=negative_prompt,
-                    width=width,
-                    height=height,
-                    num_frames=num_frames,
-                    steps=num_inference_steps,
-                    cfg=guidance_scale,
-                    seed=seed
-                )
-            
-            logger.info(f"Workflow constructed with {len(workflow)} nodes")
-            
-            # Queue prompt
-            prompt_id = self.comfyui_client.queue_prompt(workflow)
-            if not prompt_id:
-                logger.error("Failed to queue workflow")
-                return None
-            
-            logger.info(f"Workflow queued: {prompt_id}")
-                
-            # Wait for completion
-            logger.info("Waiting for generation to complete...")
-            if self.comfyui_client.wait_for_completion(prompt_id, timeout=600):
-                # Get output
-                outputs = self.comfyui_client.get_output_images(prompt_id)
-                if outputs:
-                    logger.info(f"Generation complete! Found {len(outputs)} output(s)")
-                    # Download first output
-                    out_file = outputs[0]
-                    video_data = self.comfyui_client.download_output(
-                        out_file['filename'], 
-                        out_file['subfolder'], 
-                        out_file['type']
-                    )
-                    
-                    if video_data:
-                        # Convert bytes to numpy array (this is complex for video)
-                        # For now, save to temp file and load
-                        import tempfile
-                        import imageio
-                        
-                        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
-                            tmp.write(video_data)
-                            tmp_path = tmp.name
-                            
-                        logger.info(f"Video saved to temp file: {tmp_path}")
-                        
-                        # Read video
-                        reader = imageio.get_reader(tmp_path)
-                        frames = []
-                        for frame in reader:
-                            frames.append(frame)
-                        
-                        logger.info(f"Loaded {len(frames)} frames")
-                        return np.array(frames)
-                else:
-                    logger.error("No outputs found")
-            else:
-                logger.error("Generation timed out or failed")
-                        
-            return None
-            
-        except Exception as e:
-            logger.error(f"Error in ComfyUI generation: {e}", exc_info=True)
-            return None
-            
-        finally:
-            # Always disconnect WebSocket
-            if self.comfyui_client:
-                self.comfyui_client.disconnect()
+        # 3. Execute with retry/restart logic
+        max_retries = 1
+        oom_retry = False
+        
+        for attempt in range(max_retries + 2): # +1 for OOM retry
+            try:
+                # Check server health
+                if not self.comfyui_client.is_server_running():
+                    logger.warning("ComfyUI server not running, attempting start...")
+                    pass
 
+                # Connect WebSocket
+                self.comfyui_client.connect()
+                
+                # Capture errors
+                generation_error = None
+                def on_error(data):
+                    nonlocal generation_error
+                    generation_error = data
+                self.comfyui_client.register_callback('execution_error', on_error)
+                
+                # Register callbacks
+                progress_callback = kwargs.get('progress_callback')
+                preview_callback = kwargs.get('preview_callback')
+                
+                if progress_callback:
+                    def on_progress(data):
+                        value = data.get('value', 0)
+                        max_value = data.get('max', 1)
+                        progress_callback(value, max_value, 0)
+                    self.comfyui_client.register_callback('progress', on_progress)
+                    
+                if preview_callback:
+                    self.comfyui_client.register_callback('preview', preview_callback)
+                
+                # Queue prompt
+                prompt_id = self.comfyui_client.queue_prompt(workflow)
+                if not prompt_id:
+                    raise Exception("Failed to queue prompt")
+                
+                # Wait for completion
+                if self.comfyui_client.wait_for_completion(prompt_id):
+                    # Get results
+                    outputs = self.comfyui_client.get_output_images(prompt_id)
+                    if outputs:
+                        # Download first output
+                        output = outputs[0]
+                        video_data = self.comfyui_client.download_output(
+                            output['filename'], 
+                            output['subfolder'], 
+                            output['type']
+                        )
+                        return video_data # Return bytes for now, or save to file
+                
+                # Check for OOM if failed
+                if generation_error:
+                    err_type = generation_error.get('exception_type', '')
+                    err_msg = generation_error.get('exception_message', '')
+                    
+                    if 'OutOfMemoryError' in err_type or 'Allocation on device' in err_msg:
+                        if not oom_retry:
+                            logger.warning("OOM detected! Retrying with memory optimizations...")
+                            oom_retry = True
+                            
+                            # Enable optimizations for next attempt
+                            kwargs['enable_cpu_offload'] = True
+                            kwargs['enable_vae_tiling'] = True
+                            
+                            # Restart server with --lowvram if it wasn't already
+                            # We need to access the server manager instance. 
+                            # Ideally this should be passed to inference class or accessed via singleton/app
+                            # For now, we'll try to use the client to check if we can restart, 
+                            # but client doesn't manage process.
+                            # We need to rely on the fact that we might have access to the server object 
+                            # if it was passed in __init__, or we need to signal the main app.
+                            
+                            # Assuming we have access to self.comfyui_server if it was passed (it wasn't in previous code)
+                            # Let's check if we can access it.
+                            if hasattr(self, 'comfyui_server') and self.comfyui_server:
+                                logger.info("Restarting ComfyUI with --lowvram argument...")
+                                self.comfyui_server.restart(args=["--lowvram"])
+                                # Wait for server to come back
+                                import time
+                                time.sleep(10)
+                                self.comfyui_client.connect()
+                            
+                            # Re-build basic workflow
+                            if kwargs.get('image'):
+                                workflow = builder.build_i2v_workflow(
+                                    prompt=prompt,
+                                    image_path=kwargs.get('image_path'),
+                                    width=width,
+                                    height=height,
+                                    num_frames=kwargs.get('num_frames'),
+                                    steps=kwargs.get('num_inference_steps'),
+                                    cfg=kwargs.get('guidance_scale'),
+                                    seed=kwargs.get('seed'),
+                                    fps=kwargs.get('fps', 24),
+                                    enable_vae_tiling=True
+                                )
+                            else:
+                                workflow = builder.build_t2v_workflow(
+                                    prompt=prompt,
+                                    width=width,
+                                    height=height,
+                                    num_frames=kwargs.get('num_frames'),
+                                    steps=kwargs.get('num_inference_steps'),
+                                    cfg=kwargs.get('guidance_scale'),
+                                    seed=kwargs.get('seed'),
+                                    fps=kwargs.get('fps', 24),
+                                    enable_vae_tiling=True
+                                )
+                                
+                            # Apply memory optimizations to workflow
+                            # (Already handled by builder with enable_vae_tiling=True)
+                                    
+                            # However, we CAN change the resolution or frame count to reduce memory.
+                            logger.info("Reducing resolution and frame count to prevent OOM")
+                            
+                            # Aggressively reduce to 480p
+                            width = 848
+                            height = 480
+                            kwargs['width'] = width
+                            kwargs['height'] = height
+                            
+                            # Reduce frames significantly (to ~2 seconds)
+                            # HunyuanVideo uses (frames-1)/4 latent frames, so 49 frames = 12 latent frames
+                            kwargs['num_frames'] = 49 
+                            
+                            logger.info(f"Retrying with rescue settings: {width}x{height}, 49 frames, --lowvram, tiled VAE")
+                            continue
+                                
+                        else:
+                            logger.error("OOM persisted even after optimizations")
+                            return None
+                    
+                    raise Exception(f"Generation failed: {err_msg}")
+                
+                break # Success
+                
+            except Exception as e:
+                logger.error(f"Generation failed (attempt {attempt+1}): {e}")
+                
+                if attempt < max_retries and not oom_retry:
+                    logger.info("Attempting to restart ComfyUI server...")
+                    import time
+                    time.sleep(5)
+                elif not oom_retry: # Don't return if we are about to OOM retry
+                    pass
+                else:
+                    # If we already OOM retried or max retries reached
+                    if attempt >= max_retries + 1:
+                         return None
+            finally:
+                self.comfyui_client.disconnect()
+                
+        return None
+            
     def save_video(
         self,
         video_frames: np.ndarray,
@@ -463,4 +558,3 @@ class HunyuanVideoInference:
         except Exception as e:
             logger.error(f"Error saving video: {e}")
             return False
-

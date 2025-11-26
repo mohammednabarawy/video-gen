@@ -101,8 +101,21 @@ class MainWindow(QMainWindow):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         
-        main_layout = QVBoxLayout()
+        # Main horizontal layout: controls on left, preview on right
+        main_layout = QHBoxLayout()
         central_widget.setLayout(main_layout)
+        
+        # Left side: all controls
+        left_widget = QWidget()
+        left_layout = QVBoxLayout()
+        left_widget.setLayout(left_layout)
+        main_layout.addWidget(left_widget, 2)  # 2/3 of width
+        
+        # Right side: preview
+        right_widget = QWidget()
+        right_layout = QVBoxLayout()
+        right_widget.setLayout(right_layout)
+        main_layout.addWidget(right_widget, 1)  # 1/3 of width
         
         # Mode selection
         mode_group = QGroupBox("Mode")
@@ -120,7 +133,7 @@ class MainWindow(QMainWindow):
         mode_layout.addStretch()
         
         mode_group.setLayout(mode_layout)
-        main_layout.addWidget(mode_group)
+        left_layout.addWidget(mode_group)
         
         # Prompt section
         prompt_group = QGroupBox("Prompt")
@@ -154,7 +167,7 @@ class MainWindow(QMainWindow):
         prompt_layout.addLayout(prompt_options_layout)
         
         prompt_group.setLayout(prompt_layout)
-        main_layout.addWidget(prompt_group)
+        left_layout.addWidget(prompt_group)
         
         # Image input (for I2V)
         self.image_group = QGroupBox("Image Input")
@@ -171,7 +184,7 @@ class MainWindow(QMainWindow):
         
         self.image_group.setLayout(image_layout)
         self.image_group.setVisible(False)  # Hidden by default
-        main_layout.addWidget(self.image_group)
+        left_layout.addWidget(self.image_group)
         
         # Basic controls
         controls_group = QGroupBox("Settings")
@@ -244,7 +257,7 @@ class MainWindow(QMainWindow):
         controls_layout.addLayout(row3)
         
         controls_group.setLayout(controls_layout)
-        main_layout.addWidget(controls_group)
+        left_layout.addWidget(controls_group)
         
         # Advanced options (collapsible)
         self.advanced_group = QGroupBox("Advanced Options")
@@ -302,7 +315,7 @@ class MainWindow(QMainWindow):
         advanced_layout.addWidget(self.enable_vae_tiling_check)
         
         self.advanced_group.setLayout(advanced_layout)
-        main_layout.addWidget(self.advanced_group)
+        left_layout.addWidget(self.advanced_group)
         
         # Output section
         output_group = QGroupBox("Output")
@@ -325,7 +338,7 @@ class MainWindow(QMainWindow):
         output_layout.addWidget(self.browse_output_btn)
         
         output_group.setLayout(output_layout)
-        main_layout.addWidget(output_group)
+        left_layout.addWidget(output_group)
         
         # Generate button
         self.generate_btn = QPushButton("Generate Video")
@@ -334,7 +347,7 @@ class MainWindow(QMainWindow):
             "QPushButton { font-size: 14px; font-weight: bold; }"
         )
         self.generate_btn.clicked.connect(self._on_generate)
-        main_layout.addWidget(self.generate_btn)
+        left_layout.addWidget(self.generate_btn)
         
         # Progress section
         self.progress_group = QGroupBox("Progress")
@@ -354,9 +367,9 @@ class MainWindow(QMainWindow):
         progress_layout.addWidget(self.cancel_btn)
         
         self.progress_group.setLayout(progress_layout)
-        main_layout.addWidget(self.progress_group)
+        left_layout.addWidget(self.progress_group)
         
-        main_layout.addStretch()
+        left_layout.addStretch()
         
         # Preview area
         preview_group = QGroupBox("Preview")
@@ -366,17 +379,15 @@ class MainWindow(QMainWindow):
         preview_layout.addWidget(self.preview_widget)
         
         preview_group.setLayout(preview_layout)
-        main_layout.addWidget(preview_group, 1)  # Give it stretch factor
+        right_layout.addWidget(preview_group, 1)  # Give it stretch factor
         
         # Preset Library (Dock-like behavior)
         self.preset_library = PresetLibraryWidget()
         self.preset_library.setVisible(False)
         self.preset_library.preset_selected.connect(self._on_preset_selected)
         
-        # Add to main layout (side by side with central widget?)
-        # For now, let's add it to the right side of the prompt group?
-        # Or maybe just show/hide it in the main layout
-        main_layout.addWidget(self.preset_library)
+        # Add preset library to left side below other controls
+        left_layout.addWidget(self.preset_library)
         
         # Status bar
         self.statusBar().showMessage("Ready")

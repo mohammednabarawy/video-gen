@@ -48,6 +48,35 @@ class ComfyUIClient:
         
         logger.info(f"ComfyUI client initialized for {self.server_url}")
     
+    def _retry_request(self, func: Callable, retries: int = 3, delay: float = 1.0) -> Any:
+        """
+        Retry a request function with exponential backoff
+        
+        Args:
+            func: Function to execute
+            retries: Number of retries
+            delay: Initial delay in seconds
+            
+        Returns:
+            Function result
+        """
+        last_exception = None
+        for i in range(retries + 1):
+            try:
+                return func()
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+                last_exception = e
+                if i < retries:
+                    sleep_time = delay * (2 ** i)
+                    logger.warning(f"Request failed, retrying in {sleep_time}s... ({i+1}/{retries})")
+                    time.sleep(sleep_time)
+            except Exception as e:
+                # Don't retry other exceptions
+                raise e
+                
+        logger.error(f"Request failed after {retries} retries: {last_exception}")
+        raise last_exception
+
     def connect(self):
         """Connect to ComfyUI WebSocket"""
         if self.is_connected:
@@ -160,8 +189,11 @@ class ComfyUIClient:
             True if server is accessible, False otherwise
         """
         try:
-            response = requests.get(f"{self.server_url}/system_stats", timeout=2)
-            return response.status_code == 200
+            def _check():
+                response = requests.get(f"{self.server_url}/system_stats", timeout=2)
+                return response.status_code == 200
+                
+            return self._retry_request(_check, retries=1, delay=0.5)
         except:
             return False
     
@@ -181,11 +213,14 @@ class ComfyUIClient:
                 "client_id": self.client_id
             }
             
-            response = requests.post(
-                f"{self.server_url}/prompt",
-                json=payload,
-                timeout=10
-            )
+            def _queue():
+                return requests.post(
+                    f"{self.server_url}/prompt",
+                    json=payload,
+                    timeout=10
+                )
+            
+            response = self._retry_request(_queue)
             
             if response.status_code == 200:
                 result = response.json()
@@ -211,7 +246,11 @@ class ComfyUIClient:
             History data or None if not found
         """
         try:
-            response = requests.get(f"{self.server_url}/history/{prompt_id}", timeout=5)
+            def _get():
+                return requests.get(f"{self.server_url}/history/{prompt_id}", timeout=5)
+                
+            response = self._retry_request(_get, retries=2)
+            
             if response.status_code == 200:
                 history = response.json()
                 return history.get(prompt_id)

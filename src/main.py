@@ -70,19 +70,6 @@ class Application:
         """Run the application"""
         try:
             # Step 1: Setup models path (optional - can be configured later)
-            models_path = self._setup_models_path_optional()
-            
-            # Step 2: Initialize inference engine (if models path available)
-            if models_path:
-                logger.info("Initializing model manager...")
-                self.model_manager = ModelManager(models_path)
-                self.inference_engine = HunyuanVideoInference(
-                    self.model_manager,
-                    self.app_settings,
-                    self.comfyui_client
-                )
-            else:
-                logger.info("Models path not configured - will be set up later")
             
             # Step 3: Show main window
             logger.info("Launching main window...")
