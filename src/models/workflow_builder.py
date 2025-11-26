@@ -36,7 +36,8 @@ class HunyuanVideoWorkflowBuilder:
         cfg: float = 7.0,
         seed: Optional[int] = None,
         fps: int = 24,
-        enable_vae_tiling: bool = False
+        enable_vae_tiling: bool = False,
+        low_vram: bool = False
     ) -> Dict[str, Any]:
         """
         Build a Text-to-Video workflow for HunyuanVideo
@@ -53,6 +54,8 @@ class HunyuanVideoWorkflowBuilder:
             cfg: CFG scale
             seed: Random seed (None for random)
             fps: Frames per second
+            enable_vae_tiling: Enable VAE tiling for lower VRAM
+            low_vram: Enable Low VRAM mode (FP8 weights)
             
         Returns:
             Workflow dictionary in ComfyUI API format
@@ -74,11 +77,13 @@ class HunyuanVideoWorkflowBuilder:
         
         # Node 2: UNETLoader (model)
         unet_loader_id = self._next_id()
+        weight_dtype = "fp8_e4m3fn" if low_vram else "default"
+        
         self.workflow[unet_loader_id] = {
             "class_type": "UNETLoader",
             "inputs": {
                 "unet_name": "hunyuanvideo1.5_720p_t2v_fp16.safetensors",
-                "weight_dtype": "default"
+                "weight_dtype": weight_dtype
             }
         }
         
@@ -249,7 +254,8 @@ class HunyuanVideoWorkflowBuilder:
         cfg: float = 7.0,
         seed: Optional[int] = None,
         fps: int = 24,
-        enable_vae_tiling: bool = False
+        enable_vae_tiling: bool = False,
+        low_vram: bool = False
     ) -> Dict[str, Any]:
         """
         Build an Image-to-Video workflow for HunyuanVideo
@@ -265,6 +271,8 @@ class HunyuanVideoWorkflowBuilder:
             cfg: CFG scale
             seed: Random seed
             fps: Frames per second
+            enable_vae_tiling: Enable VAE tiling
+            low_vram: Enable Low VRAM mode
             
         Returns:
             Workflow dictionary in ComfyUI API format
@@ -281,7 +289,8 @@ class HunyuanVideoWorkflowBuilder:
             cfg=cfg,
             seed=seed,
             fps=fps,
-            enable_vae_tiling=enable_vae_tiling
+            enable_vae_tiling=enable_vae_tiling,
+            low_vram=low_vram
         )
         
         # Update model to I2V version

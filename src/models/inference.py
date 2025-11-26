@@ -329,6 +329,17 @@ class HunyuanVideoInference:
             prompt = self._enhance_prompt(prompt, style, camera_motion)
             logger.info(f"Enhanced prompt for ComfyUI: {prompt}")
         
+        # Determine Low VRAM mode
+        low_vram = False
+        if self.settings.performance_preset == PerformancePreset.LOW:
+            low_vram = True
+        elif self.settings.performance_preset == PerformancePreset.AUTO:
+            # Check VRAM if auto
+            vram_gb = self.settings.get_vram_gb()
+            if vram_gb < 16:
+                low_vram = True
+                logger.info(f"Auto-detected Low VRAM mode ({vram_gb:.1f} GB VRAM)")
+
         if kwargs.get('image'):
             # Image-to-Video
             workflow = builder.build_i2v_workflow(
@@ -340,7 +351,9 @@ class HunyuanVideoInference:
                 steps=kwargs.get('num_inference_steps'),
                 cfg=kwargs.get('guidance_scale'),
                 seed=kwargs.get('seed'),
-                fps=kwargs.get('fps', 24)
+                fps=kwargs.get('fps', 24),
+                enable_vae_tiling=kwargs.get('enable_vae_tiling', False) or low_vram,
+                low_vram=low_vram
             )
         else:
             # Text-to-Video
@@ -352,7 +365,9 @@ class HunyuanVideoInference:
                 steps=kwargs.get('num_inference_steps'),
                 cfg=kwargs.get('guidance_scale'),
                 seed=kwargs.get('seed'),
-                fps=kwargs.get('fps', 24)
+                fps=kwargs.get('fps', 24),
+                enable_vae_tiling=kwargs.get('enable_vae_tiling', False) or low_vram,
+                low_vram=low_vram
             )
             
         # 3. Execute with retry/restart logic
