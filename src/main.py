@@ -69,9 +69,17 @@ class Application:
     def run(self):
         """Run the application"""
         try:
-            # Step 1: Setup models path (optional - can be configured later)
+            # Step 1: Initialize inference engine
+            logger.info("Initializing inference engine...")
+            self.model_manager = ModelManager(self.path_manager.default_models_path)
+            self.inference_engine = HunyuanVideoInference(
+                self.model_manager,
+                self.app_settings,
+                self.comfyui_client,
+                self.comfyui_server
+            )
             
-            # Step 3: Show main window
+            # Step 2: Show main window
             logger.info("Launching main window...")
             self.main_window = MainWindow(
                 self.settings,
@@ -81,8 +89,7 @@ class Application:
             )
             
             # Connect signals
-            if self.inference_engine:
-                self.main_window.generation_requested.connect(self._on_generation_requested)
+            self.main_window.generation_requested.connect(self._on_generation_requested)
             
             self.main_window.show()
             
@@ -103,6 +110,10 @@ class Application:
                     self.main_window
                 )
                 settings_dialog.exec()
+            
+            # Check for missing custom nodes after ComfyUI configuration
+            if self.app_settings.comfyui_path:
+                self._check_and_install_nodes()
             
             logger.info("Application ready!")
             
@@ -375,6 +386,49 @@ class Application:
         )
         
         self.main_window.set_generating(False)
+    
+    def _check_and_install_nodes(self):
+        """Check for missing custom nodes and offer to install them"""
+        try:
+            from pathlib import Path
+            from models.node_manager import NodeManager
+            from gui.dialogs.node_install_dialog import NodeInstallDialog
+            
+            comfyui_path = Path(self.app_settings.comfyui_path)
+            node_manager = NodeManager(comfyui_path)
+            
+            # Check for missing nodes
+            missing = node_manager.check_missing_nodes()
+            
+            if missing:
+                logger.info(f"Missing {len(missing)} required custom nodes")
+                
+                # Show installation dialog
+                dialog = NodeInstallDialog(comfyui_path, self.main_window)
+                result = dialog.exec()
+                
+                if result == QDialog.DialogCode.Accepted:
+                    logger.info("Custom nodes installed successfully")
+                    QMessageBox.information(
+                        self.main_window,
+                        "Nodes Installed",
+                        "Custom nodes have been installed.\n\n"
+                        "Please restart ComfyUI server for changes to take effect."
+                    )
+                else:
+                    logger.warning("User cancelled node installation")
+                    QMessageBox.warning(
+                        self.main_window,
+                        "Missing Nodes",
+                        "Some required custom nodes are not installed.\n\n"
+                        "Video generation may fail. You can install them later from "
+                        "Edit → Settings."
+                    )
+            else:
+                logger.info("All required custom nodes are installed")
+                
+        except Exception as e:
+            logger.error(f"Error checking nodes: {e}", exc_info=True)
     
     def _cleanup(self):
         """Cleanup resources before application exit"""
