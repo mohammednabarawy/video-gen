@@ -166,9 +166,12 @@ class ComfyUIServer:
             logger.error(f"Failed to start server: {e}", exc_info=True)
             return False, f"Failed to start server: {str(e)}"
     
-    def stop(self) -> tuple[bool, str]:
+    def stop(self, force: bool = False) -> tuple[bool, str]:
         """
-        Stop ComfyUI server
+        Stop ComfyUI server with improved Windows process cleanup
+        
+        Args:
+            force: If True, immediately kill the process without graceful shutdown
         
         Returns:
             Tuple of (success, message)
@@ -184,48 +187,121 @@ class ComfyUIServer:
             if self.log_thread:
                 self.stop_logging.set()
             
-            # Try graceful shutdown first
+            # Check if process is still running
             if self.process.poll() is None:
+                if force:
+                    # Immediate force kill
+                    logger.info("Force killing server process...")
+                    self._kill_process_tree(self.process.pid)
+                    return True, "Server force-stopped"
+                
+                # Try graceful shutdown first
+                logger.info("Attempting graceful server shutdown...")
                 self.process.terminate()
                 
-                # Wait up to 5 seconds for graceful shutdown
+                # Wait up to 10 seconds for graceful shutdown (increased from 5)
                 try:
-                    self.process.wait(timeout=5)
+                    self.process.wait(timeout=10)
                     logger.info("Server stopped gracefully")
                     return True, "Server stopped"
                 except subprocess.TimeoutExpired:
-                    # Force kill if still running
-                    self.process.kill()
-                    self.process.wait()
-                    logger.warning("Server was force-killed")
-                    return True, "Server force-stopped"
+                    # Force kill the entire process tree
+                    logger.warning("Graceful shutdown timed out, force killing process tree...")
+                    self._kill_process_tree(self.process.pid)
+                    return True, "Server force-stopped after timeout"
             else:
                 return True, "Server was already stopped"
                 
         except Exception as e:
-            logger.error(f"Error stopping server: {e}")
+            logger.error(f"Error stopping server: {e}", exc_info=True)
+            # Try force kill as last resort
+            try:
+                if self.process and self.process.poll() is None:
+                    self._kill_process_tree(self.process.pid)
+                    return True, f"Server stopped (error occurred but recovered): {str(e)}"
+            except:
+                pass
             return False, f"Error stopping server: {str(e)}"
-    def restart(self, timeout: int = 30, args: list[str] = None) -> tuple[bool, str]:
+    
+    def _kill_process_tree(self, pid: int):
         """
-        Restart ComfyUI server
+        Kill a process and all its children (Windows-safe)
+        
+        Args:
+            pid: Process ID to kill
+        """
+        try:
+            parent = psutil.Process(pid)
+            children = parent.children(recursive=True)
+            
+            # Kill all children first
+            for child in children:
+                try:
+                    logger.debug(f"Killing child process {child.pid}")
+                    child.kill()
+                except psutil.NoSuchProcess:
+                    pass
+            
+            # Kill parent
+            try:
+                logger.debug(f"Killing parent process {pid}")
+                parent.kill()
+            except psutil.NoSuchProcess:
+                pass
+            
+            # Wait for processes to terminate
+            gone, alive = psutil.wait_procs(children + [parent], timeout=3)
+            
+            if alive:
+                logger.warning(f"{len(alive)} processes still alive after kill")
+                
+        except psutil.NoSuchProcess:
+            logger.debug(f"Process {pid} already terminated")
+        except Exception as e:
+            logger.error(f"Error killing process tree: {e}", exc_info=True)
+    def restart(self, timeout: int = 30, args: list[str] = None, force_stop: bool = False) -> tuple[bool, str]:
+        """
+        Restart ComfyUI server with improved reliability
         
         Args:
             timeout: Timeout for start operation
             args: Optional list of command line arguments
+            force_stop: If True, force kill the process instead of graceful shutdown
             
         Returns:
             Tuple of (success, message)
         """
         logger.info("Restarting ComfyUI server...")
         
-        # Stop existing server
-        self.stop()
+        # Stop existing server (with force option)
+        success, message = self.stop(force=force_stop)
+        if not success:
+            logger.warning(f"Stop failed but continuing: {message}")
         
-        # Wait a bit
-        time.sleep(2)
+        # Wait longer for Windows to release file handles (increased from 2 to 5 seconds)
+        logger.info("Waiting for file handles to be released...")
+        time.sleep(5)
         
-        # Start new instance
-        return self.start(timeout=timeout, args=args)
+        # Additional wait if process tree cleanup was needed
+        if force_stop or "force" in message.lower():
+            logger.info("Force stop detected, waiting additional time...")
+            time.sleep(3)
+        
+        # Clear the process reference
+        self.process = None
+        
+        # Start new instance with retries
+        max_retries = 2
+        for attempt in range(max_retries):
+            if attempt > 0:
+                logger.info(f"Retry attempt {attempt + 1}/{max_retries}")
+                time.sleep(2)
+            
+            success, message = self.start(timeout=timeout, args=args)
+            if success:
+                return True, message
+                
+        return False, f"Server restart failed after {max_retries} attempts: {message}"
         
     def check_health(self) -> bool:
         """

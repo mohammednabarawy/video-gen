@@ -414,6 +414,34 @@ class HunyuanVideoInference:
                     err_type = generation_error.get('exception_type', '')
                     err_msg = generation_error.get('exception_message', '')
                     
+                    # Check for Windows logging error (Errno 22)
+                    if 'OSError' in err_type and 'Errno 22' in err_msg:
+                        logger.error("Detected Windows logging error (Errno 22) in ComfyUI")
+                        logger.info("This is a known ComfyUI issue on Windows - restarting server...")
+                        
+                        if hasattr(self, 'comfyui_server') and self.comfyui_server:
+                            # Force-stop to clear corrupted logging state
+                            self.comfyui_server.restart(force_stop=True)
+                            import time
+                            time.sleep(3)
+                            
+                            # Reconnect client
+                            try:
+                                self.comfyui_client.connect()
+                            except:
+                                pass
+                            
+                            # Retry generation
+                            continue
+                        else:
+                            raise RuntimeError(
+                                "ComfyUI logging error detected (Errno 22). "
+                                "Please manually restart ComfyUI server:\n"
+                                "cd D:\\ComfyUI_windows_portable\\ComfyUI\n"
+                                "..\\python_embeded\\python.exe main.py --port 8188"
+                            )
+                    
+                    # Check for OOM
                     if 'OutOfMemoryError' in err_type or 'Allocation on device' in err_msg:
                         if not oom_retry:
                             logger.warning("OOM detected! Retrying with memory optimizations...")
