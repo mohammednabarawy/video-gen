@@ -1,0 +1,36 @@
+{
+  "presets": [
+    {
+      "name": "Cinematic Landscape",
+      "prompt": "A breathtaking landscape with golden hour lighting, cinematic composition, dramatic clouds",
+      "style": "Cinematic",
+      "camera_motion": "pan_right",
+      "duration": 5,
+      "resolution": "720p"
+    },
+    {
+      "name": "Anime Character",
+      "prompt": "Anime girl with flowing hair, vibrant colors, detailed animation, Studio Ghibli style",
+      "style": "Anime",
+      "camera_motion": "zoom_in",
+      "duration": 5,
+      "resolution": "720p"
+    },
+    {
+      "name": "Product Showcase",
+      "prompt": "Luxury product on pedestal, premium lighting, rotating view, elegant presentation",
+      "style": "Realistic",
+      "camera_motion": "orbit",
+      "duration": 5,
+      "resolution": "720p"
+    },
+    {
+      "name": "3D Abstract",
+      "prompt": "Abstract geometric shapes, colorful, smooth animation, octane render, high quality",
+      "style": "3D",
+      "camera_motion": "dynamic",
+      "duration": 5,
+      "resolution": "720p"
+    }
+  ]
+}

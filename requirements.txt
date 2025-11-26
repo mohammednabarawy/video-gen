@@ -1,0 +1,29 @@
+# Core ML libraries
+torch>=2.0.0
+diffusers>=0.31.0
+transformers>=4.30.0
+accelerate>=0.20.0
+safetensors>=0.4.0
+
+# Model downloading
+huggingface-hub>=0.23.0
+
+# GUI framework
+PyQt6>=6.6.0
+PyQt6-WebEngine>=6.6.0  # For video playback
+
+# Video processing
+opencv-python>=4.8.0
+imageio>=2.31.0
+imageio-ffmpeg>=0.4.9
+pillow>=10.0.0
+
+# Utilities
+numpy>=1.24.0
+pyyaml>=6.0
+pynvml>=11.5.0  # For GPU monitoring
+websocket-client>=1.6.0  # For ComfyUI real-time updates
+
+# Optional optimizations (commented out - require compilation)
+# xformers>=0.0.20  # For memory-efficient attention
+# flash-attn>=2.0.0  # For faster inference
