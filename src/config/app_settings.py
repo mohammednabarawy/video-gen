@@ -72,19 +72,19 @@ class AppSettings:
             enable_cpu_offload=True,
             enable_vae_tiling=True,
             max_resolution="480p",
-            max_frames=81
+            max_frames=49  # ~2 seconds at 24fps for 12GB VRAM
         ),
         PerformancePreset.MEDIUM: PerformancePresetSettings(
             enable_cpu_offload=False,
             enable_vae_tiling=True,
             max_resolution="720p",
-            max_frames=125
+            max_frames=73  # ~3 seconds at 24fps for 16GB+ VRAM
         ),
         PerformancePreset.HIGH: PerformancePresetSettings(
             enable_cpu_offload=False,
             enable_vae_tiling=False,
             max_resolution="1080p",
-            max_frames=125
+            max_frames=125  # ~5 seconds at 24fps for 24GB+ VRAM
         ),
     }
     
@@ -136,7 +136,7 @@ class AppSettings:
         self.default_fps = 25
         self.default_style = "Cinematic"
         self.default_cfg_scale = 7.0
-        self.default_inference_steps = 50
+        self.default_inference_steps = 20  # Reduced for Low VRAM compatibility
         
         # Performance settings
         self.performance_preset = PerformancePreset.AUTO
