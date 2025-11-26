@@ -54,24 +54,6 @@ class HunyuanVideoInference:
         Initialize inference wrapper
         
         Args:
-            model_manager: ModelManager instance
-            app_settings: AppSettings instance
-            comfyui_client: ComfyUIClient instance
-            comfyui_server: ComfyUIServer instance (optional)
-        """
-        self.model_manager = model_manager
-        self.app_settings = app_settings
-        self.comfyui_client = comfyui_client
-        self.comfyui_server = comfyui_server
-        self.pipeline = None
-    
-    def _ensure_pipeline_loaded(self, **kwargs):
-        """Ensure pipeline is loaded"""
-        if not self.model_manager.is_loaded():
-            logger.info("Pipeline not loaded, loading now...")
-            self.pipeline = self.model_manager.load_pipeline(**kwargs)
-        else:
-            self.pipeline = self.model_manager.pipeline
         
         return self.pipeline is not None
     
